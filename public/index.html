@@ -21,18 +21,6 @@
         <!-- Player 1 / Controls -->
         <div class="w-full md:w-64 bg-gray-800 p-4 rounded-xl shadow-xl border border-gray-700 flex flex-col items-center">
             <h2 class="text-xl font-bold mb-4 text-gray-200">Player (White)</h2>
-            <div class="w-full mb-4">
-                <label class="block text-sm text-gray-400 mb-1">Elemental Affinity</label>
-                <select id="p1-element" class="w-full bg-gray-700 text-white p-2 rounded focus:outline-none focus:ring-2 focus:ring-amber-500">
-                    <option value="none">None</option>
-                    <option value="fire">Fire</option>
-                    <option value="water">Water</option>
-                </select>
-            </div>
-            <button id="p1-use-element" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded opacity-50 cursor-not-allowed transition-all" disabled>
-                Use Element
-            </button>
-            <p id="p1-element-status" class="text-xs text-gray-500 mt-2 text-center">Select an element to begin</p>
         </div>
 
         <!-- Chess Board Container -->
@@ -54,18 +42,6 @@
         <!-- Player 2 / Bot / Controls -->
         <div class="w-full md:w-64 bg-gray-800 p-4 rounded-xl shadow-xl border border-gray-700 flex flex-col items-center">
             <h2 class="text-xl font-bold mb-4 text-gray-200" id="p2-name">Opponent (Black)</h2>
-            <div class="w-full mb-4">
-                <label class="block text-sm text-gray-400 mb-1">Elemental Affinity</label>
-                <select id="p2-element" class="w-full bg-gray-700 text-white p-2 rounded focus:outline-none focus:ring-2 focus:ring-amber-500">
-                    <option value="none">None</option>
-                    <option value="fire">Fire</option>
-                    <option value="water">Water</option>
-                </select>
-            </div>
-            <button id="p2-use-element" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded opacity-50 cursor-not-allowed transition-all" disabled>
-                Use Element
-            </button>
-            <p id="p2-element-status" class="text-xs text-gray-500 mt-2 text-center">Select an element to begin</p>
             
             <div class="mt-8 w-full">
                 <h3 class="text-sm font-bold text-gray-400 mb-2 border-b border-gray-700 pb-1">Game Mode</h3>
@@ -90,7 +66,6 @@
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="js/elements.js"></script>
     <script src="js/game.js"></script>
     <script src="js/bot.js"></script>
     <script src="js/socket.js"></script>

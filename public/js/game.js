@@ -23,56 +23,76 @@ class SoundEngine {
     
     playMove() {
         if (this.ctx.state === 'suspended') this.ctx.resume();
+        const now = this.ctx.currentTime;
+        
+        // Use a triangle wave for a warmer, wood-like organic thump
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.connect(gain);
         gain.connect(this.ctx.destination);
         
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(300, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.1);
+        osc.type = 'triangle';
+        // Quick pitch drop mimics a piece impacting a surface
+        osc.frequency.setValueAtTime(180, now);
+        osc.frequency.exponentialRampToValueAtTime(60, now + 0.08);
         
-        gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+        // Tight, fast decay prevents ringing, sounding like solid wood
+        gain.gain.setValueAtTime(0.4, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
         
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.1);
+        osc.start(now);
+        osc.stop(now + 0.08);
     }
     
     playCapture() {
         if (this.ctx.state === 'suspended') this.ctx.resume();
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
+        const now = this.ctx.currentTime;
         
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(800, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(300, this.ctx.currentTime + 0.15);
+        // Layer 1: High frequency click (the physical collision)
+        const osc1 = this.ctx.createOscillator();
+        const gain1 = this.ctx.createGain();
+        osc1.connect(gain1);
+        gain1.connect(this.ctx.destination);
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(600, now);
+        osc1.frequency.exponentialRampToValueAtTime(200, now + 0.05);
+        gain1.gain.setValueAtTime(0.3, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
         
-        gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+        // Layer 2: Deeper resonance thump (the energy of the slide/capture)
+        const osc2 = this.ctx.createOscillator();
+        const gain2 = this.ctx.createGain();
+        osc2.connect(gain2);
+        gain2.connect(this.ctx.destination);
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(140, now);
+        osc2.frequency.exponentialRampToValueAtTime(40, now + 0.12);
+        gain2.gain.setValueAtTime(0.5, now);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
         
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.15);
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + 0.05);
+        osc2.stop(now + 0.12);
     }
     
     playExplosion() {
         if (this.ctx.state === 'suspended') this.ctx.resume();
+        const now = this.ctx.currentTime;
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.connect(gain);
         gain.connect(this.ctx.destination);
         
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(20, this.ctx.currentTime + 0.5);
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(20, now + 0.5);
         
-        gain.gain.setValueAtTime(0.8, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+        gain.gain.setValueAtTime(0.8, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
         
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.5);
+        osc.start(now);
+        osc.stop(now + 0.5);
     }
 }
 const SOUNDS = new SoundEngine();
@@ -80,7 +100,6 @@ const SOUNDS = new SoundEngine();
 class ElementChessGame {
     constructor() {
         this.chess = new Chess();
-        this.elementSystem = new ElementSystem(this);
         this.boardElement = document.getElementById('board');
         
         this.selectedSquare = null;
@@ -88,8 +107,6 @@ class ElementChessGame {
         
         this.playerColor = 'w'; // Local player is always white initially
         this.gameMode = 'bot'; // 'local', 'bot', 'multiplayer'
-        
-        this.elementMode = false; // True when player clicked "Use Element" and needs to select target
         
         this.initBoard();
         this.bindEvents();
@@ -119,21 +136,6 @@ class ElementChessGame {
     }
 
     bindEvents() {
-        // Element selection for Player 1
-        document.getElementById('p1-element').addEventListener('change', (e) => {
-            this.elementSystem.setElement('w', e.target.value);
-            this.updateUI();
-        });
-
-        // Use Element button for Player 1
-        document.getElementById('p1-use-element').addEventListener('click', () => {
-            if (this.elementSystem.canUseElement('w')) {
-                this.elementMode = true;
-                document.getElementById('p1-element-status').innerText = "Select target piece on board";
-                document.getElementById('p1-use-element').classList.add('ring-4', 'ring-red-500');
-            }
-        });
-        
         // Game mode
         document.getElementById('game-mode').addEventListener('change', (e) => {
             this.gameMode = e.target.value;
@@ -155,19 +157,9 @@ class ElementChessGame {
 
     resetGame() {
         this.chess.reset();
-        this.elementSystem = new ElementSystem(this);
         this.selectedSquare = null;
         this.validMoves = [];
-        this.elementMode = false;
         document.getElementById('game-over-overlay').classList.add('hidden');
-        document.getElementById('p1-use-element').classList.remove('ring-4', 'ring-red-500');
-        
-        // Reset elements
-        const p1El = document.getElementById('p1-element').value;
-        const p2El = document.getElementById('p2-element').value;
-        this.elementSystem.setElement('w', p1El);
-        this.elementSystem.setElement('b', p2El);
-        
         this.updateUI();
     }
 
@@ -180,20 +172,6 @@ class ElementChessGame {
         }
 
         const piece = this.chess.get(squareName);
-
-        // Handle element mode targeting
-        if (this.elementMode) {
-            const success = this.elementSystem.useElement(this.playerColor, squareName);
-            if (success) {
-                this.elementMode = false;
-                document.getElementById('p1-use-element').classList.remove('ring-4', 'ring-red-500');
-                document.getElementById('p1-element-status').innerText = "Element used!";
-                this.renderBoard();
-            } else {
-                alert("Invalid target for element.");
-            }
-            return;
-        }
 
         // Handle normal movement
         if (this.selectedSquare) {
@@ -208,15 +186,8 @@ class ElementChessGame {
 
         // Select a piece
         if (piece && piece.color === this.chess.turn()) {
-            // Check if piece is frozen
-            if (this.elementSystem.isSquareFrozen(squareName)) {
-                console.log("This piece is frozen!");
-                this.selectedSquare = null;
-                this.validMoves = [];
-            } else {
-                this.selectedSquare = squareName;
-                this.validMoves = this.chess.moves({ square: squareName, verbose: true });
-            }
+            this.selectedSquare = squareName;
+            this.validMoves = this.chess.moves({ square: squareName, verbose: true });
         } else {
             this.selectedSquare = null;
             this.validMoves = [];
@@ -226,15 +197,6 @@ class ElementChessGame {
     }
 
     makeMove(move) {
-        // Track fire imp movements
-        this.elementSystem.updateFireImpPosition(move.from, move.to);
-        
-        // Check if a fire imp was captured
-        let explosion = false;
-        if (this.chess.get(move.to)) {
-            explosion = this.elementSystem.checkFireImpCapture(move.to);
-        }
-
         const isCapture = move.flags && (move.flags.includes('c') || move.flags.includes('e'));
 
         this.chess.move(move);
@@ -242,15 +204,11 @@ class ElementChessGame {
         this.validMoves = [];
         
         // Play appropriate sound
-        if (explosion) {
-            SOUNDS.playExplosion();
-        } else if (isCapture) {
+        if (isCapture) {
             SOUNDS.playCapture();
         } else {
             SOUNDS.playMove();
         }
-        
-        this.elementSystem.onTurnStart(this.chess.turn());
         
         this.updateUI();
 
@@ -287,22 +245,6 @@ class ElementChessGame {
 
     updateUI() {
         this.renderBoard();
-
-        // Update Use Element button state
-        const p1Btn = document.getElementById('p1-use-element');
-        if (this.elementSystem.canUseElement('w')) {
-            p1Btn.disabled = false;
-            p1Btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            document.getElementById('p1-element-status').innerText = "Ready to use";
-        } else {
-            p1Btn.disabled = true;
-            p1Btn.classList.add('opacity-50', 'cursor-not-allowed');
-            if (this.elementSystem.playerStates['w'].used) {
-                document.getElementById('p1-element-status').innerText = "Element used";
-            } else {
-                document.getElementById('p1-element-status').innerText = "Select an element to begin";
-            }
-        }
     }
 
     renderBoard() {
@@ -314,7 +256,7 @@ class ElementChessGame {
             
             // Clear existing pieces and classes
             sq.innerHTML = '';
-            sq.classList.remove('selected', 'valid-move', 'capture', 'fire-imp', 'frozen');
+            sq.classList.remove('selected', 'valid-move', 'capture');
             
             // Add piece if exists
             if (piece) {
@@ -341,27 +283,7 @@ class ElementChessGame {
                     sq.classList.add('capture');
                 }
             }
-            
-            // Element specific classes
-            if (this.elementSystem.game.fireImps && this.elementSystem.game.fireImps.some(i => i.square === squareName)) {
-                sq.classList.add('fire-imp');
-            }
-            
-            if (this.elementSystem.isSquareFrozen(squareName)) {
-                sq.classList.add('frozen');
-            }
         });
-    }
-
-    playExplosionAnimation(squareName) {
-        const sq = document.querySelector(`.square[data-square="${squareName}"]`);
-        if (sq) {
-            sq.classList.add('fire-explosion');
-            setTimeout(() => {
-                sq.classList.remove('fire-explosion');
-                this.renderBoard();
-            }, 500);
-        }
     }
 }
 

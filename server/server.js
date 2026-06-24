@@ -61,14 +61,6 @@ io.on('connection', (socket) => {
         socket.to(code).emit('opponent_moved', move);
     });
 
-    socket.on('use_element', (code, color, element, targetSquare) => {
-        socket.to(code).emit('opponent_used_element', color, element, targetSquare);
-    });
-    
-    socket.on('sync_element_selection', (code, color, element) => {
-        socket.to(code).emit('opponent_selected_element', element);
-    });
-
     socket.on('disconnect', () => {
         console.log('User disconnected:', socket.id);
         // Find if user was in a room and notify opponent
