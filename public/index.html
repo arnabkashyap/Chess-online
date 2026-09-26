@@ -3,29 +3,116 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Element Chess</title>
+    <title>Element Chess — Master the Elements</title>
+    <meta name="description" content="Element Chess: a one-click matchmaking chess game with elemental themes. Play locally, vs bot, or find a random online opponent instantly.">
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="css/style.css">
 </head>
-<body class="bg-gray-900 text-white h-screen flex flex-col items-center justify-center font-sans">
+<body class="bg-gray-900 text-white min-h-screen py-8 flex flex-col items-center justify-center font-sans">
     
     <div class="text-center mb-6">
         <h1 class="text-4xl font-bold text-amber-500 tracking-wider uppercase drop-shadow-lg">Element Chess</h1>
         <p class="text-gray-400 mt-2">Master the elements, conquer the board.</p>
     </div>
 
-    <div class="flex flex-col md:flex-row gap-8 items-start justify-center w-full max-w-6xl px-4">
+    <!-- Authentication Screen (Force-rendered if no session) -->
+    <div id="auth-container" class="w-full max-w-md px-4 auth-fade hidden">
+        <div class="glass-panel p-8 rounded-2xl border border-gray-700/50 shadow-2xl flex flex-col gap-6">
+            <div class="text-center">
+                <h2 id="auth-title" class="text-3xl font-extrabold text-amber-500 tracking-wide uppercase drop-shadow-md">Enter Arena</h2>
+                <p id="auth-subtitle" class="text-gray-400 text-sm mt-1">Summon your magic and access the lobby.</p>
+            </div>
+
+            <!-- Error/Success Alerts -->
+            <div id="auth-alert" class="hidden text-xs py-2.5 px-4 rounded-xl font-semibold text-center border"></div>
+
+            <!-- Traditional Form -->
+            <form id="auth-form" class="flex flex-col gap-4">
+                <!-- Display Name (Hidden in Sign In mode) -->
+                <div id="name-field-group" class="hidden flex flex-col gap-1">
+                    <label for="reg-name" class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Mage Moniker</label>
+                    <input type="text" id="reg-name" placeholder="Ex: Firebrand" class="auth-input w-full text-white text-sm py-2 px-3 rounded-xl focus:outline-none" />
+                </div>
+
+                <div class="flex flex-col gap-1">
+                    <label for="auth-email" class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Email Address</label>
+                    <input type="email" id="auth-email" required placeholder="name@domain.com" class="auth-input w-full text-white text-sm py-2 px-3 rounded-xl focus:outline-none" />
+                </div>
+
+                <div class="flex flex-col gap-1 relative">
+                    <label for="auth-password" class="text-xs font-semibold text-gray-400 uppercase tracking-wider">Password</label>
+                    <div class="relative">
+                         <input type="password" id="auth-password" required placeholder="••••••••" class="auth-input w-full text-white text-sm py-2 pl-3 pr-10 rounded-xl focus:outline-none" />
+                         <button type="button" id="toggle-pw-btn" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 focus:outline-none text-xs">Show</button>
+                    </div>
+                </div>
+
+                <button type="submit" id="auth-submit-btn" class="find-match-btn w-full text-white font-bold py-2.5 px-4 rounded-xl mt-2 transition-transform active:scale-95 shadow-md">
+                    ⚔ Enter Lobby
+                </button>
+            </form>
+
+            <!-- Toggle Login/Signup -->
+            <div class="text-center text-xs text-gray-400">
+                <span id="auth-toggle-text">New to the elements?</span>
+                <button id="auth-toggle-btn" class="text-amber-500 hover:text-amber-400 font-semibold focus:outline-none ml-1">Create Account</button>
+            </div>
+
+            <div class="relative flex py-2 items-center">
+                <div class="flex-grow border-t border-gray-700/60"></div>
+                <span class="flex-shrink mx-4 text-gray-500 text-xs font-bold uppercase tracking-widest">Or Align With</span>
+                <div class="flex-grow border-t border-gray-700/60"></div>
+            </div>
+
+            <!-- OAuth Blocks -->
+            <div class="flex gap-4">
+                <!-- Google -->
+                <button id="google-btn" class="oauth-btn oauth-btn-google flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold text-gray-200 focus:outline-none">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24">
+                        <path fill="#EA4335" d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.41 0-6.19-2.78-6.19-6.19s2.78-6.19 6.19-6.19c1.7 0 3.2.69 4.3 1.8l3.1-3.1C18.84 2.285 15.74.8 12.24.8 6.04.8 1.04 5.8 1.04 12s5 11.2 11.2 11.2c6.1 0 11.2-5 11.2-11.2 0-.9-.1-1.7-.2-2.5H12.24z"/>
+                    </svg>
+                    Google
+                </button>
+                <!-- Facebook -->
+                <button id="facebook-btn" class="oauth-btn oauth-btn-facebook flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold text-gray-200 focus:outline-none">
+                    <svg class="w-4 h-4" fill="#3B5998" viewBox="0 0 24 24">
+                        <path d="M22.675 0h-21.35c-.732 0-1.325.593-1.325 1.325v21.351c0 .731.593 1.324 1.325 1.324h11.495v-8.73h-2.94v-3.411h2.94v-2.513c0-2.912 1.778-4.499 4.377-4.499 1.246 0 2.317.092 2.629.134v3.048h-1.804c-1.413 0-1.687.672-1.687 1.658v2.172h3.376l-.44 3.411h-2.936v8.73h6.143c.731 0 1.324-.593 1.324-1.324v-21.35c0-.732-.593-1.325-1.325-1.325z"/>
+                    </svg>
+                    Facebook
+                </button>
+            </div>
+
+            <!-- Guest Button -->
+            <button id="guest-btn" class="guest-btn w-full text-white font-bold py-3 px-4 rounded-xl flex flex-col items-center justify-center shadow-lg active:scale-98 transition-transform">
+                <span class="text-sm font-extrabold uppercase tracking-wide">⚔ Enter as Guest</span>
+                <span class="text-[10px] text-emerald-100 font-normal">Quick access, start instant battles</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Game Lobby -->
+    <div id="game-lobby" class="flex flex-col md:flex-row gap-8 items-start justify-center w-full max-w-6xl px-4 hidden">
         
         <!-- Player 1 / Controls -->
         <div class="w-full md:w-64 bg-gray-800 p-4 rounded-xl shadow-xl border border-gray-700 flex flex-col items-center">
-            <h2 class="text-xl font-bold mb-4 text-gray-200">Player (White)</h2>
+            <!-- Profile Display -->
+            <div class="flex flex-col items-center user-badge p-3 rounded-lg w-full mb-3 border border-gray-700/50">
+                <div id="p1-avatar" class="w-16 h-16 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-3xl mb-2 select-none shadow-md">🧙‍♂️</div>
+                <h2 id="p1-name" class="text-sm font-bold text-center text-gray-200 truncate w-full">Player (White)</h2>
+            </div>
+            
+            <!-- Leave Arena / Account Sign Out -->
+            <button id="logout-btn" class="signout-btn w-full text-red-400 hover:text-red-300 text-xs font-semibold py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 mt-2">
+                🚪 Leave Arena
+            </button>
         </div>
 
         <!-- Chess Board Container -->
         <div class="relative bg-gray-800 p-2 rounded-lg shadow-2xl border-4 border-amber-900/50">
-            <!-- Ranks and Files could be added here, simplified for now -->
             <div id="board" class="board grid grid-cols-8 grid-rows-8 w-[400px] h-[400px] sm:w-[512px] sm:h-[512px] rounded overflow-hidden shadow-inner border-2 border-amber-950">
                 <!-- Grid squares will be generated by JS -->
             </div>
@@ -41,22 +128,66 @@
 
         <!-- Player 2 / Bot / Controls -->
         <div class="w-full md:w-64 bg-gray-800 p-4 rounded-xl shadow-xl border border-gray-700 flex flex-col items-center">
-            <h2 class="text-xl font-bold mb-4 text-gray-200" id="p2-name">Opponent (Black)</h2>
+            <!-- Profile Display -->
+            <div class="flex flex-col items-center user-badge p-3 rounded-lg w-full mb-3 border border-gray-700/50">
+                <div id="p2-avatar" class="w-16 h-16 rounded-full bg-gray-700/40 border border-gray-600/30 flex items-center justify-center text-3xl mb-2 select-none shadow-md">👤</div>
+                <h2 id="p2-name" class="text-sm font-bold text-center text-gray-200 truncate w-full">Opponent (Black)</h2>
+            </div>
             
-            <div class="mt-8 w-full">
+            <div class="mt-4 w-full">
                 <h3 class="text-sm font-bold text-gray-400 mb-2 border-b border-gray-700 pb-1">Game Mode</h3>
                 <select id="game-mode" class="w-full bg-gray-700 text-white p-2 rounded focus:outline-none focus:ring-2 focus:ring-amber-500 mb-2">
                     <option value="local">Local PvP</option>
                     <option value="bot">Play vs Bot</option>
                     <option value="multiplayer">Multiplayer</option>
                 </select>
-                <div id="multiplayer-controls" class="hidden flex-col gap-2 w-full mt-2">
-                    <button id="create-room-btn" class="bg-gray-600 hover:bg-gray-500 text-white py-1 px-2 rounded text-sm w-full">Create Room</button>
-                    <div class="flex gap-1 w-full">
-                        <input type="text" id="room-code-input" placeholder="Code" class="bg-gray-700 text-white px-2 py-1 rounded w-full text-sm text-center font-mono">
-                        <button id="join-room-btn" class="bg-green-600 hover:bg-green-500 text-white py-1 px-3 rounded text-sm">Join</button>
+
+                <!-- Bot Difficulty Picker (revealed only in bot mode) -->
+                <div id="bot-difficulty-controls" class="hidden flex-col gap-1 w-full mb-2">
+                    <p class="text-xs text-gray-400 font-semibold tracking-wide uppercase">Difficulty</p>
+                    <div class="flex w-full rounded-lg overflow-hidden border border-gray-600" role="group" aria-label="Bot Difficulty">
+                        <button data-difficulty="easy"
+                            class="diff-btn flex-1 py-1.5 text-xs font-bold transition-colors
+                                   bg-gray-700 text-gray-300 hover:bg-gray-600">
+                            🌿 Apprentice
+                        </button>
+                        <button data-difficulty="medium"
+                            class="diff-btn flex-1 py-1.5 text-xs font-bold transition-colors border-l border-r border-gray-600
+                                   diff-btn-active">
+                            🔥 Mage
+                        </button>
+                        <button data-difficulty="hard"
+                            class="diff-btn flex-1 py-1.5 text-xs font-bold transition-colors
+                                   bg-gray-700 text-gray-300 hover:bg-gray-600">
+                            ⚡ Grandmaster
+                        </button>
                     </div>
-                    <p id="room-status" class="text-xs text-amber-400 text-center mt-1"></p>
+                    <p id="difficulty-label" class="text-xs text-amber-400 text-center mt-0.5">Medium — Depth 3, 10% blunder</p>
+                </div>
+
+                <!-- Multiplayer Controls (shown only in multiplayer mode) -->
+                <div id="multiplayer-controls" class="hidden flex-col gap-3 w-full mt-2">
+
+                    <!-- Idle state: Find Match button -->
+                    <div id="idle-state">
+                        <button id="find-match-btn" class="find-match-btn w-full text-white font-bold py-2 px-4 rounded-lg shadow-lg">
+                            ⚔ Find Match
+                        </button>
+                    </div>
+
+                    <!-- Searching state: spinner + cancel (hidden initially) -->
+                    <div id="searching-state" class="hidden flex-col items-center gap-2 w-full">
+                        <div class="flex items-center gap-2 text-amber-400">
+                            <div class="spinner"></div>
+                            <span class="text-sm font-medium">Searching for an opponent...</span>
+                        </div>
+                        <button id="cancel-search-btn" class="w-full bg-gray-600 hover:bg-gray-500 text-white text-sm font-bold py-1.5 px-4 rounded-lg transition-colors">
+                            Cancel
+                        </button>
+                    </div>
+
+                    <!-- Status / feedback text -->
+                    <p id="room-status" class="text-xs text-amber-400 text-center"></p>
                 </div>
             </div>
         </div>
@@ -66,6 +197,8 @@
     <!-- Scripts -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/auth.js"></script>
     <script src="js/game.js"></script>
     <script src="js/bot.js"></script>
     <script src="js/socket.js"></script>

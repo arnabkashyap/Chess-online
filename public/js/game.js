@@ -1,6 +1,5 @@
 // game.js
 // Main game logic and UI rendering
-
 const PIECE_IMAGES = {
     'p': 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',
     'n': 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',
@@ -15,13 +14,19 @@ const PIECE_IMAGES = {
     'Q': 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',
     'K': 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
 };
-
 class SoundEngine {
     constructor() {
-        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            this.ctx = AudioContextClass ? new AudioContextClass() : null;
+        } catch (e) {
+            console.warn('AudioContext not supported or blocked:', e);
+            this.ctx = null;
+        }
     }
     
     playMove() {
+        if (!this.ctx) return;
         if (this.ctx.state === 'suspended') this.ctx.resume();
         const now = this.ctx.currentTime;
         
@@ -39,12 +44,11 @@ class SoundEngine {
         // Tight, fast decay prevents ringing, sounding like solid wood
         gain.gain.setValueAtTime(0.4, now);
         gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-        
         osc.start(now);
         osc.stop(now + 0.08);
     }
-    
     playCapture() {
+        if (!this.ctx) return;
         if (this.ctx.state === 'suspended') this.ctx.resume();
         const now = this.ctx.currentTime;
         
@@ -77,6 +81,7 @@ class SoundEngine {
     }
     
     playExplosion() {
+        if (!this.ctx) return;
         if (this.ctx.state === 'suspended') this.ctx.resume();
         const now = this.ctx.currentTime;
         const osc = this.ctx.createOscillator();
@@ -107,9 +112,12 @@ class ElementChessGame {
         
         this.playerColor = 'w'; // Local player is always white initially
         this.gameMode = 'bot'; // 'local', 'bot', 'multiplayer'
+        this.botDifficulty = 'medium'; // 'easy', 'medium', 'hard'
         
         this.initBoard();
         this.bindEvents();
+        // Show difficulty picker on initial load (default mode is 'bot')
+        this._syncPanels();
         this.updateUI();
     }
 
@@ -136,23 +144,68 @@ class ElementChessGame {
     }
 
     bindEvents() {
-        // Game mode
+        // ── Game mode dropdown ────────────────────────────────────────────────
         document.getElementById('game-mode').addEventListener('change', (e) => {
             this.gameMode = e.target.value;
-            if (this.gameMode === 'multiplayer') {
-                document.getElementById('multiplayer-controls').classList.remove('hidden');
-                document.getElementById('multiplayer-controls').classList.add('flex');
-            } else {
-                document.getElementById('multiplayer-controls').classList.add('hidden');
-                document.getElementById('multiplayer-controls').classList.remove('flex');
-            }
+            this._syncPanels();
             this.resetGame();
         });
 
-        // Restart
+        // ── Bot difficulty segment buttons ────────────────────────────────────
+        const DIFF_LABELS = {
+            easy:   'Easy — Depth 2, 30% blunder chance',
+            medium: 'Medium — Depth 3, 10% blunder chance',
+            hard:   'Hard — Depth 4, 0% blunder · Full elemental analysis'
+        };
+
+        document.querySelectorAll('.diff-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.botDifficulty = btn.dataset.difficulty;
+
+                // Update active style on all segment buttons
+                document.querySelectorAll('.diff-btn').forEach(b => {
+                    b.classList.remove('diff-btn-active');
+                    b.classList.add('bg-gray-700', 'text-gray-300');
+                });
+                btn.classList.add('diff-btn-active');
+                btn.classList.remove('bg-gray-700', 'text-gray-300');
+
+                // Update descriptive label
+                const label = document.getElementById('difficulty-label');
+                if (label) label.innerText = DIFF_LABELS[this.botDifficulty] || '';
+
+                this.resetGame();
+            });
+        });
+
+        // ── Restart button ────────────────────────────────────────────────────
         document.getElementById('restart-btn').addEventListener('click', () => {
             this.resetGame();
         });
+    }
+
+    /** Show/hide side panels based on the current game mode. */
+    _syncPanels() {
+        const mpPanel   = document.getElementById('multiplayer-controls');
+        const botPanel  = document.getElementById('bot-difficulty-controls');
+
+        // Multiplayer panel
+        if (this.gameMode === 'multiplayer') {
+            mpPanel.classList.remove('hidden');
+            mpPanel.classList.add('flex');
+        } else {
+            mpPanel.classList.add('hidden');
+            mpPanel.classList.remove('flex');
+        }
+
+        // Bot difficulty panel
+        if (this.gameMode === 'bot') {
+            botPanel.classList.remove('hidden');
+            botPanel.classList.add('flex');
+        } else {
+            botPanel.classList.add('hidden');
+            botPanel.classList.remove('flex');
+        }
     }
 
     resetGame() {
@@ -245,6 +298,88 @@ class ElementChessGame {
 
     updateUI() {
         this.renderBoard();
+        this.updateProfiles();
+    }
+
+    updateProfiles() {
+        const user = window.authManager ? window.authManager.getCurrentUser() : null;
+        const p1Name = document.getElementById('p1-name');
+        const p1Avatar = document.getElementById('p1-avatar');
+        const p2Name = document.getElementById('p2-name');
+        const p2Avatar = document.getElementById('p2-avatar');
+
+        const renderAvatar = (elem, photo) => {
+            if (!elem) return;
+            if (photo && (photo.startsWith('http') || photo.startsWith('data:image'))) {
+                elem.innerHTML = `<img src="${photo}" class="w-full h-full rounded-full object-cover" alt="avatar" />`;
+            } else {
+                elem.innerHTML = '';
+                elem.innerText = photo || '👤';
+            }
+        };
+
+        if (this.gameMode === 'multiplayer') {
+            const opponent = this.opponent || { displayName: 'Opponent', photoURL: '👤' };
+            if (this.playerColor === 'w') {
+                // Current player is White (P1)
+                if (p1Name) {
+                    p1Name.innerText = user ? `${user.displayName} (White)` : 'Player (White)';
+                }
+                if (p1Avatar) {
+                    renderAvatar(p1Avatar, user ? user.photoURL : '🧙‍♂️');
+                }
+                // Opponent is Black (P2)
+                if (p2Name) {
+                    p2Name.innerText = `${opponent.displayName} (Black)`;
+                }
+                if (p2Avatar) {
+                    renderAvatar(p2Avatar, opponent.photoURL);
+                }
+            } else {
+                // Current player is Black (P2), Opponent is White (P1)
+                if (p1Name) {
+                    p1Name.innerText = `${opponent.displayName} (White)`;
+                }
+                if (p1Avatar) {
+                    renderAvatar(p1Avatar, opponent.photoURL);
+                }
+                // Current player is Black (P2)
+                if (p2Name) {
+                    p2Name.innerText = user ? `${user.displayName} (Black)` : 'Player (Black)';
+                }
+                if (p2Avatar) {
+                    renderAvatar(p2Avatar, user ? user.photoURL : '🧙‍♂️');
+                }
+            }
+            return;
+        }
+
+        // Update P1 (White) for local or bot PvP
+        if (p1Name) {
+            p1Name.innerText = user ? `${user.displayName} (White)` : 'Player (White)';
+        }
+        if (p1Avatar) {
+            renderAvatar(p1Avatar, user ? user.photoURL : '🧙‍♂️');
+        }
+
+        // Update P2 (Black / Opponent) based on game mode
+        if (p2Name && p2Avatar) {
+            if (this.gameMode === 'bot') {
+                if (this.botDifficulty === 'easy') {
+                    p2Name.innerText = 'Apprentice Druid (Black)';
+                    p2Avatar.innerText = '🌿';
+                } else if (this.botDifficulty === 'medium') {
+                    p2Name.innerText = 'Pyromancer Mage (Black)';
+                    p2Avatar.innerText = '🔥';
+                } else if (this.botDifficulty === 'hard') {
+                    p2Name.innerText = 'Storm Grandmaster (Black)';
+                    p2Avatar.innerText = '⚡';
+                }
+            } else if (this.gameMode === 'local') {
+                p2Name.innerText = 'Local Mage (Black)';
+                p2Avatar.innerText = '🔮';
+            }
+        }
     }
 
     renderBoard() {
@@ -286,6 +421,9 @@ class ElementChessGame {
         });
     }
 }
+
+// Expose class globally
+window.ElementChessGame = ElementChessGame;
 
 // Initialize on load
 window.onload = () => {
