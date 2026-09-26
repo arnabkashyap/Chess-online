@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Chess, Square, Move } from 'chess.js';
 import { BoardTileMap, PieceStatusMap } from '@/types/elemental';
 import {
@@ -10,7 +10,12 @@ import {
   generateSymmetricTiles,
 } from '@/engine/elementalEngine';
 import ElementalOverlay from './ChessBoard/ElementalOverlay';
-import { Shield, Flame, Snowflake, Wind, AlertCircle, RefreshCw } from 'lucide-react';
+import PlayerCard from './PlayerCard';
+import ElementalSpellBar from './ElementalSpellBar';
+import ControlPanel, { MoveHistoryItem } from './ControlPanel';
+import Header from './Header';
+import { AlertCircle, RefreshCw, Trophy, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const PIECE_IMAGES: Record<string, string> = {
   p: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',
@@ -27,9 +32,13 @@ const PIECE_IMAGES: Record<string, string> = {
   K: 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',
 };
 
-// Web Audio sound engine for chess actions
+const PIECE_VALUES: Record<string, number> = {
+  p: 1, n: 3, b: 3, r: 5, q: 9, k: 0,
+};
+
 class SoundEngine {
   private ctx: AudioContext | null = null;
+  public isMuted: boolean = false;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -44,7 +53,7 @@ class SoundEngine {
   }
 
   playMove() {
-    if (!this.ctx) return;
+    if (this.isMuted || !this.ctx) return;
     if (this.ctx.state === 'suspended') this.ctx.resume();
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -61,7 +70,7 @@ class SoundEngine {
   }
 
   playCapture() {
-    if (!this.ctx) return;
+    if (this.isMuted || !this.ctx) return;
     if (this.ctx.state === 'suspended') this.ctx.resume();
     const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
@@ -80,75 +89,82 @@ class SoundEngine {
 
 const sounds = new SoundEngine();
 
-export interface ChessBoardProps {
-  gameMode?: 'local' | 'bot' | 'multiplayer';
-  botDifficulty?: 'easy' | 'medium' | 'hard';
-}
-
-export const ChessBoard: React.FC<ChessBoardProps> = ({
-  gameMode = 'local',
-  botDifficulty = 'medium',
-}) => {
+export const ChessBoard: React.FC = () => {
   const [game, setGame] = useState<Chess>(() => new Chess());
   const [boardTileMap, setBoardTileMap] = useState<BoardTileMap>(() =>
     generateSymmetricTiles(12345)
   );
   const [pieceStatusMap, setPieceStatusMap] = useState<PieceStatusMap>({});
 
+  // Game Settings & Modes
+  const [gameMode, setGameMode] = useState<'local' | 'bot' | 'multiplayer'>('local');
+  const [botDifficulty, setBotDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+
+  // Player State
+  const [whiteMana, setWhiteMana] = useState(4);
+  const [blackMana, setBlackMana] = useState(4);
+  const [whiteCaptured, setWhiteCaptured] = useState<string[]>([]);
+  const [blackCaptured, setBlackCaptured] = useState<string[]>([]);
+  const [activeSpell, setActiveSpell] = useState<string | null>(null);
+
+  // Board State
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [validMoves, setValidMoves] = useState<Move[]>([]);
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [moveHistory, setMoveHistory] = useState<MoveHistoryItem[]>([]);
   const [turn, setTurn] = useState<'w' | 'b'>('w');
-  const [isGameOver, setIsGameOver] = useState<boolean>(false);
-  const [gameOverText, setGameOverText] = useState<string>('');
+  const [isGameOver, setIsGameOver] = useState(false);
+  const [gameOverText, setGameOverText] = useState('');
 
   const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
   const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
 
+  const displayFiles = isFlipped ? [...files].reverse() : files;
+  const displayRanks = isFlipped ? [...ranks].reverse() : ranks;
+
   const triggerBanner = (msg: string) => {
     setBannerMessage(msg);
-    setLogs((prev) => [msg, ...prev.slice(0, 15)]);
     setTimeout(() => {
       setBannerMessage((current) => (current === msg ? null : current));
     }, 3500);
   };
 
   const handleResetGame = useCallback(() => {
-    const newChess = new Chess();
-    setGame(newChess);
+    setGame(new Chess());
     setBoardTileMap(generateSymmetricTiles());
     setPieceStatusMap({});
     setSelectedSquare(null);
     setValidMoves([]);
     setBannerMessage(null);
-    setLogs(['Game reset with fresh symmetric elemental tiles!']);
+    setMoveHistory([]);
     setTurn('w');
+    setWhiteMana(4);
+    setBlackMana(4);
+    setWhiteCaptured([]);
+    setBlackCaptured([]);
+    setActiveSpell(null);
     setIsGameOver(false);
     setGameOverText('');
   }, []);
 
-  // Helper to convert current board into a map of square -> piece info
-  const getBoardPieces = (chessInstance: Chess) => {
-    const pieces: Record<string, { type: string; color: 'w' | 'b' }> = {};
-    const b = chessInstance.board();
-    for (let r = 0; r < 8; r++) {
-      for (let f = 0; f < 8; f++) {
-        const sq = b[r][f];
-        if (sq) {
-          const sqName = `${files[f]}${ranks[r]}`;
-          pieces[sqName] = { type: sq.type, color: sq.color };
-        }
-      }
-    }
-    return pieces;
-  };
+  // Material calculations
+  const whiteScore = whiteCaptured.reduce((sum, p) => sum + (PIECE_VALUES[p.toLowerCase()] || 1), 0);
+  const blackScore = blackCaptured.reduce((sum, p) => sum + (PIECE_VALUES[p.toLowerCase()] || 1), 0);
+  const whiteAdvantage = Math.max(0, whiteScore - blackScore);
+  const blackAdvantage = Math.max(0, blackScore - whiteScore);
 
   const handleSquareClick = (square: string) => {
     if (isGameOver) return;
 
     // Check turn for Bot mode
-    if (gameMode === 'bot' && turn === 'b') {
+    if (gameMode === 'bot' && turn === 'b') return;
+
+    // A. CASTING SPELL MODE
+    if (activeSpell) {
+      castSpellOnSquare(square, activeSpell);
+      setActiveSpell(null);
       return;
     }
 
@@ -189,13 +205,77 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     }
   };
 
+  const castSpellOnSquare = (square: string, spellId: string) => {
+    const currentMana = turn === 'w' ? whiteMana : blackMana;
+    let cost = 3;
+    let element: 'fire' | 'ice' | 'earth' | 'wind' = 'fire';
+    let spellName = 'Spell';
+
+    if (spellId === 'fire_trap') {
+      cost = 4;
+      element = 'fire';
+      spellName = 'Inferno Strike';
+    } else if (spellId === 'ice_trap') {
+      cost = 3;
+      element = 'ice';
+      spellName = 'Glacier Snap';
+    } else if (spellId === 'earth_shield') {
+      cost = 3;
+      element = 'earth';
+      spellName = 'Earth Fortress';
+    } else if (spellId === 'wind_gale') {
+      cost = 2;
+      element = 'wind';
+      spellName = 'Gale Surge';
+    }
+
+    if (currentMana < cost) {
+      triggerBanner(`❌ Insufficient Mana to cast ${spellName}!`);
+      return;
+    }
+
+    // Deduct Mana
+    if (turn === 'w') {
+      setWhiteMana((m) => Math.max(0, m - cost));
+    } else {
+      setBlackMana((m) => Math.max(0, m - cost));
+    }
+
+    // Apply Tile Hazard directly onto selected square
+    const nextTiles = { ...boardTileMap };
+    const dur = element === 'fire' || element === 'ice' ? 6 : -1;
+    nextTiles[square] = { square, element, duration: dur };
+    setBoardTileMap(nextTiles);
+
+    triggerBanner(`✨ Cast ${spellName} on ${square}!`);
+
+    // Log move chronicle
+    setMoveHistory((prev) => [
+      {
+        san: `Cast ${spellName} @ ${square}`,
+        color: turn,
+        elementTrigger: element,
+        moveNumber: Math.floor(prev.length / 2) + 1,
+      },
+      ...prev,
+    ]);
+  };
+
   const executeMove = (move: Move) => {
     const fromSquare = move.from;
     const targetSquare = move.to;
     const isCapture = move.flags.includes('c') || move.flags.includes('e');
     const targetPiece = game.get(targetSquare as Square);
 
-    // Step A: Resolve Target Tile Hazards & Earth Shield Absorptions
+    if (isCapture && targetPiece) {
+      if (turn === 'w') {
+        setWhiteCaptured((prev) => [...prev, targetPiece.type]);
+      } else {
+        setBlackCaptured((prev) => [...prev, targetPiece.type]);
+      }
+    }
+
+    // Step A: Target Tile Resolution
     const resolution = resolveTargetTile(
       targetSquare,
       boardTileMap,
@@ -207,7 +287,6 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     let nextPieceStatus = resolution.pieceStatusMap;
     let nextBoardTiles = resolution.boardTileMap;
 
-    // Move status tracking from source square to destination square
     if (nextPieceStatus[fromSquare]) {
       const movedStatus = { ...nextPieceStatus[fromSquare], square: targetSquare };
       delete nextPieceStatus[fromSquare];
@@ -215,7 +294,6 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     }
 
     if (resolution.captureBlocked) {
-      // Earth Shield absorbed the capture! Stop attacker on current square & play shield sound
       triggerBanner(resolution.message || '🛡️ Earth Shield absorbed the attack!');
       sounds.playCapture();
       setSelectedSquare(null);
@@ -225,7 +303,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
       return;
     }
 
-    // Step B: Execute standard chess.js move
+    // Step B: Execute standard chess move
     const result = game.move(move);
     if (!result) return;
 
@@ -239,29 +317,43 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
       triggerBanner(resolution.message);
     }
 
-    // Step C: Process End-of-Turn maintenance (burn countdowns, unfreezing, tile decay)
-    const currentPieces = getBoardPieces(game);
+    // Record Move Chronicle
+    const targetTileElem = boardTileMap[targetSquare]?.element;
+    const elemTag = targetTileElem !== 'none' ? targetTileElem : undefined;
+
+    setMoveHistory((prev) => [
+      {
+        san: result.san,
+        color: turn,
+        elementTrigger: elemTag,
+        moveNumber: Math.floor(prev.length / 2) + 1,
+      },
+      ...prev,
+    ]);
+
+    // Step C: Process End of Turn
     const endTurnResult = processEndOfTurn(
       nextBoardTiles,
       nextPieceStatus,
-      turn,
-      currentPieces
+      turn
     );
 
     nextPieceStatus = endTurnResult.pieceStatusMap;
     nextBoardTiles = endTurnResult.boardTileMap;
 
-    // If pieces were destroyed by fire, remove them from chess.js state by clearing square
     if (endTurnResult.destroyedSquares.length > 0) {
-      endTurnResult.destroyedSquares.forEach((sq) => {
-        // Enforce piece removal on fire destruction
-        game.remove(sq as Square);
-      });
+      endTurnResult.destroyedSquares.forEach((sq) => game.remove(sq as Square));
     }
 
     endTurnResult.messages.forEach((msg) => triggerBanner(msg));
 
-    // Update state
+    // Regenerate +1 Mana per turn up to 10
+    if (turn === 'w') {
+      setWhiteMana((m) => Math.min(10, m + 1));
+    } else {
+      setBlackMana((m) => Math.min(10, m + 1));
+    }
+
     setBoardTileMap(nextBoardTiles);
     setPieceStatusMap(nextPieceStatus);
     setSelectedSquare(null);
@@ -270,7 +362,6 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     const nextTurn = game.turn();
     setTurn(nextTurn);
 
-    // Check game over
     if (game.isGameOver()) {
       setIsGameOver(true);
       if (game.isCheckmate()) {
@@ -283,14 +374,13 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     }
   };
 
-  // Bot move trigger
+  // Bot Turn Effect
   useEffect(() => {
     if (gameMode === 'bot' && turn === 'b' && !isGameOver) {
       const timer = setTimeout(() => {
         const moves = game.moves({ verbose: true });
         if (moves.length === 0) return;
 
-        // Filter out frozen black pieces
         const availableMoves = moves.filter((m) =>
           canPieceMove(m.from, pieceStatusMap)
         );
@@ -300,172 +390,166 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
             availableMoves[Math.floor(Math.random() * availableMoves.length)];
           executeMove(randomMove);
         }
-      }, 600);
+      }, 650);
       return () => clearTimeout(timer);
     }
   }, [turn, gameMode, isGameOver, game, pieceStatusMap]);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 items-center justify-center w-full max-w-6xl mx-auto p-4">
-      {/* LEFT PANEL: Game Status & Hazard Legend */}
-      <div className="w-full lg:w-72 bg-gray-900/90 border border-gray-800 p-5 rounded-2xl shadow-2xl flex flex-col gap-4 backdrop-blur-md">
-        <div className="flex items-center justify-between border-b border-gray-800 pb-3">
-          <h2 className="text-lg font-extrabold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-            <span>⚔ Match Arena</span>
-          </h2>
-          <span className="text-xs font-semibold px-2 py-1 bg-amber-500/20 text-amber-300 rounded-md border border-amber-500/30 uppercase">
-            {turn === 'w' ? 'White Turn' : 'Black Turn'}
-          </span>
+    <div className="w-full flex flex-col items-center">
+      <Header
+        isMuted={isMuted}
+        onToggleMute={() => {
+          sounds.isMuted = !isMuted;
+          setIsMuted(!isMuted);
+        }}
+      />
+
+      {/* 3-COLUMN DESKTOP LAYOUT */}
+      <div className="w-full max-w-7xl px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        {/* LEFT COLUMN: Player Cards & Graveyard */}
+        <div className="lg:col-span-3 flex flex-col gap-4">
+          <PlayerCard
+            name={gameMode === 'bot' ? 'Elemental Bot' : 'Black Mage'}
+            color="b"
+            isTurn={turn === 'b'}
+            mana={blackMana}
+            capturedPieces={blackCaptured}
+            materialAdvantage={blackAdvantage}
+            isBot={gameMode === 'bot'}
+          />
+
+          <PlayerCard
+            name="White Archmage"
+            color="w"
+            isTurn={turn === 'w'}
+            mana={whiteMana}
+            capturedPieces={whiteCaptured}
+            materialAdvantage={whiteAdvantage}
+          />
         </div>
 
-        {/* Dynamic Hazard Legend */}
-        <div className="flex flex-col gap-2.5 text-xs text-gray-300">
-          <h3 className="font-bold uppercase tracking-wider text-gray-400">
-            Elemental Hazards
-          </h3>
-
-          <div className="flex items-center gap-2.5 p-2 rounded-lg bg-red-950/40 border border-red-800/50">
-            <Flame className="w-4 h-4 text-amber-400 shrink-0" />
-            <div>
-              <p className="font-bold text-red-300">Fire (Inferno)</p>
-              <p className="text-[11px] text-gray-400">2-turn burn countdown before destruction.</p>
+        {/* CENTER COLUMN: Turn Advantage Banner, Chessboard & Spell Bar */}
+        <div className="lg:col-span-6 flex flex-col items-center gap-4">
+          
+          {/* Turn Banner Notification */}
+          <div className="w-full flex items-center justify-between px-4 py-2 rounded-xl bg-slate-900/90 border border-slate-800 shadow-md">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-400 animate-spin" />
+              <span className="text-xs font-black uppercase text-amber-300">
+                {turn === 'w' ? "White's Turn" : "Black's Turn"}
+              </span>
             </div>
+            {bannerMessage && (
+              <span className="text-xs font-bold text-amber-400 animate-pulse truncate max-w-[240px]">
+                {bannerMessage}
+              </span>
+            )}
           </div>
 
-          <div className="flex items-center gap-2.5 p-2 rounded-lg bg-sky-950/40 border border-sky-800/50">
-            <Snowflake className="w-4 h-4 text-sky-400 shrink-0" />
-            <div>
-              <p className="font-bold text-sky-300">Ice (Glacier)</p>
-              <p className="text-[11px] text-gray-400">Locks piece for 1 turn; grants physical immunity.</p>
-            </div>
-          </div>
+          {/* CHESSBOARD GRID CANVAS */}
+          <div className="relative bg-slate-950 p-3 rounded-2xl shadow-2xl border-4 border-amber-900/60 flex items-center justify-center">
+            <div className="relative grid grid-cols-8 grid-rows-8 w-[340px] h-[340px] sm:w-[480px] sm:h-[480px] rounded-lg overflow-hidden border border-amber-950 shadow-inner select-none">
+              {displayRanks.map((rank, rIdx) =>
+                displayFiles.map((file, fIdx) => {
+                  const square = `${file}${rank}`;
+                  const isLight = (rIdx + fIdx) % 2 === 0;
+                  const piece = game.get(square as Square);
+                  const isSelected = selectedSquare === square;
+                  const isPossibleMove = validMoves.some((m) => m.to === square);
 
-          <div className="flex items-center gap-2.5 p-2 rounded-lg bg-amber-950/40 border border-amber-800/50">
-            <Shield className="w-4 h-4 text-amber-400 shrink-0" />
-            <div>
-              <p className="font-bold text-amber-300">Earth (Fortress)</p>
-              <p className="text-[11px] text-gray-400">Grants +1 Hit Protection to absorb next capture.</p>
-            </div>
-          </div>
+                  let pieceKey = '';
+                  if (piece) {
+                    pieceKey =
+                      piece.color === 'w'
+                        ? piece.type.toUpperCase()
+                        : piece.type.toLowerCase();
+                  }
 
-          <div className="flex items-center gap-2.5 p-2 rounded-lg bg-teal-950/40 border border-teal-800/50">
-            <Wind className="w-4 h-4 text-teal-400 shrink-0" />
-            <div>
-              <p className="font-bold text-teal-300">Wind (Gale)</p>
-              <p className="text-[11px] text-gray-400">Corridor allows sliding pieces to pass over friendly pieces.</p>
-            </div>
-          </div>
-        </div>
+                  return (
+                    <div
+                      key={square}
+                      onClick={() => handleSquareClick(square)}
+                      className={`relative flex items-center justify-center cursor-pointer transition-colors duration-150 ${
+                        isLight ? 'bg-[#ebd9b4]' : 'bg-[#a37849]'
+                      } ${
+                        isSelected ? '!bg-amber-400/90 ring-4 ring-amber-300 z-20' : ''
+                      }`}
+                    >
+                      {/* Possible move target highlight */}
+                      {isPossibleMove && (
+                        <div className="absolute w-4 h-4 rounded-full bg-amber-500/80 border-2 border-amber-200 z-20 pointer-events-none animate-ping" />
+                      )}
 
-        <button
-          onClick={handleResetGame}
-          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-bold py-2.5 px-4 rounded-xl shadow-lg transition-transform active:scale-98"
-        >
-          <RefreshCw className="w-4 h-4" />
-          <span>New Battle</span>
-        </button>
-      </div>
+                      {/* Piece image */}
+                      {pieceKey && PIECE_IMAGES[pieceKey] && (
+                        <img
+                          src={PIECE_IMAGES[pieceKey]}
+                          alt={pieceKey}
+                          className="w-[84%] h-[84%] object-contain z-10 drop-shadow-lg pointer-events-none transition-transform hover:scale-110"
+                        />
+                      )}
+                    </div>
+                  );
+                })
+              )}
 
-      {/* CENTER: CHESS BOARD & OVERLAY */}
-      <div className="flex flex-col items-center gap-3">
-        {/* Banner Alert Toast */}
-        {bannerMessage && (
-          <div className="flex items-center gap-2 bg-amber-950/90 border border-amber-500 text-amber-200 text-xs font-bold py-2 px-4 rounded-xl shadow-xl animate-bounce">
-            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-            <span>{bannerMessage}</span>
-          </div>
-        )}
+              {/* ELEMENTAL VISUAL OVERLAY */}
+              <ElementalOverlay
+                boardTileMap={boardTileMap}
+                pieceStatusMap={pieceStatusMap}
+                flipped={isFlipped}
+              />
 
-        <div className="relative bg-gray-900 p-3 rounded-2xl shadow-2xl border-4 border-amber-900/60 flex items-center justify-center">
-          {/* Main 8x8 Board Container */}
-          <div className="relative grid grid-cols-8 grid-rows-8 w-[340px] h-[340px] sm:w-[480px] sm:h-[480px] rounded-lg overflow-hidden border border-amber-950 shadow-inner select-none">
-            {ranks.map((rank, rIdx) =>
-              files.map((file, fIdx) => {
-                const square = `${file}${rank}`;
-                const isLight = (rIdx + fIdx) % 2 === 0;
-                const piece = game.get(square as Square);
-                const isSelected = selectedSquare === square;
-                const isPossibleMove = validMoves.some((m) => m.to === square);
-
-                let pieceKey = '';
-                if (piece) {
-                  pieceKey =
-                    piece.color === 'w'
-                      ? piece.type.toUpperCase()
-                      : piece.type.toLowerCase();
-                }
-
-                return (
-                  <div
-                    key={square}
-                    onClick={() => handleSquareClick(square)}
-                    className={`relative flex items-center justify-center cursor-pointer transition-colors duration-150 ${
-                      isLight ? 'bg-[#eeedd2]' : 'bg-[#769656]'
-                    } ${isSelected ? '!bg-amber-400/80 ring-2 ring-amber-300' : ''}`}
+              {/* GAME OVER OVERLAY */}
+              {isGameOver && (
+                <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-md z-40 flex flex-col items-center justify-center p-6 text-center">
+                  <Trophy className="w-12 h-12 text-amber-400 animate-bounce mb-2" />
+                  <h3 className="text-3xl font-black text-amber-400 uppercase tracking-wider mb-2">
+                    Match Concluded!
+                  </h3>
+                  <p className="text-slate-200 text-sm font-semibold mb-6">
+                    {gameOverText}
+                  </p>
+                  <button
+                    onClick={handleResetGame}
+                    className="bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 px-6 rounded-xl shadow-lg transition-transform active:scale-95"
                   >
-                    {/* Possible move dot */}
-                    {isPossibleMove && (
-                      <div className="absolute w-4 h-4 rounded-full bg-amber-500/70 border border-amber-300 z-20 pointer-events-none animate-ping" />
-                    )}
-
-                    {/* Piece image */}
-                    {pieceKey && PIECE_IMAGES[pieceKey] && (
-                      <img
-                        src={PIECE_IMAGES[pieceKey]}
-                        alt={pieceKey}
-                        className="w-[82%] h-[82%] object-contain z-10 drop-shadow-md pointer-events-none"
-                      />
-                    )}
-                  </div>
-                );
-              })
-            )}
-
-            {/* ELEMENTAL VISUAL OVERLAY */}
-            <ElementalOverlay
-              boardTileMap={boardTileMap}
-              pieceStatusMap={pieceStatusMap}
-            />
-
-            {/* GAME OVER OVERLAY */}
-            {isGameOver && (
-              <div className="absolute inset-0 bg-black/85 backdrop-blur-sm z-40 flex flex-col items-center justify-center p-6 text-center">
-                <h3 className="text-3xl font-extrabold text-amber-400 mb-2 drop-shadow-md">
-                  ⚔ Game Over!
-                </h3>
-                <p className="text-gray-200 text-sm font-semibold mb-6">
-                  {gameOverText}
-                </p>
-                <button
-                  onClick={handleResetGame}
-                  className="bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 px-6 rounded-xl shadow-lg transition-transform active:scale-95"
-                >
-                  Play Again
-                </button>
-              </div>
-            )}
+                    Play New Match
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* RIGHT PANEL: Live Action Log */}
-      <div className="w-full lg:w-72 bg-gray-900/90 border border-gray-800 p-5 rounded-2xl shadow-2xl flex flex-col gap-3 h-[420px]">
-        <h3 className="text-sm font-extrabold text-gray-300 uppercase tracking-wider border-b border-gray-800 pb-2">
-          📜 Battle Chronicle
-        </h3>
-        <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 text-xs text-gray-400 scrollbar-thin">
-          {logs.length === 0 ? (
-            <p className="italic text-gray-600 text-center py-4">No events recorded yet.</p>
-          ) : (
-            logs.map((log, idx) => (
-              <div
-                key={idx}
-                className="p-2 rounded bg-gray-800/60 border border-gray-700/50 leading-tight text-gray-200"
-              >
-                {log}
-              </div>
-            ))
-          )}
+          {/* ELEMENTAL SPELL ACTION BAR */}
+          <ElementalSpellBar
+            currentMana={turn === 'w' ? whiteMana : blackMana}
+            activeSpell={activeSpell}
+            onSelectSpell={setActiveSpell}
+            isPlayerTurn={gameMode !== 'bot' || turn === 'w'}
+          />
+        </div>
+
+        {/* RIGHT COLUMN: Control Panel & Move History */}
+        <div className="lg:col-span-3 flex flex-col gap-4">
+          <ControlPanel
+            gameMode={gameMode}
+            onSelectGameMode={(m) => {
+              setGameMode(m);
+              handleResetGame();
+            }}
+            botDifficulty={botDifficulty}
+            onSelectBotDifficulty={setBotDifficulty}
+            moveHistory={moveHistory}
+            onResetGame={handleResetGame}
+            onFlipBoard={() => setIsFlipped(!isFlipped)}
+            onResign={() => {
+              setIsGameOver(true);
+              setGameOverText(`${turn === 'w' ? 'White' : 'Black'} resigned the match.`);
+            }}
+          />
         </div>
       </div>
     </div>
