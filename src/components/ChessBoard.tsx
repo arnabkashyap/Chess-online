@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Chess, Square, Move } from 'chess.js';
 import { BoardTileMap, PieceStatusMap } from '@/types/elemental';
 import {
@@ -16,6 +16,8 @@ import ControlPanel, { MoveHistoryItem } from './ControlPanel';
 import Header from './Header';
 import { AlertCircle, RefreshCw, Trophy, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '@/providers/AuthProvider';
+import { saveCompletedMatch } from '@/lib/matchService';
 
 const PIECE_IMAGES: Record<string, string> = {
   p: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',
@@ -90,6 +92,8 @@ class SoundEngine {
 const sounds = new SoundEngine();
 
 export const ChessBoard: React.FC = () => {
+  const { user } = useAuth();
+
   const [game, setGame] = useState<Chess>(() => new Chess());
   const [boardTileMap, setBoardTileMap] = useState<BoardTileMap>(() =>
     generateSymmetricTiles(12345)
@@ -102,12 +106,24 @@ export const ChessBoard: React.FC = () => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
 
+  // Match timing & submission refs
+  const gameStartTimeRef = useRef<Date>(new Date());
+  const hasSavedMatchRef = useRef<boolean>(false);
+
   // Player State
   const [whiteMana, setWhiteMana] = useState(4);
   const [blackMana, setBlackMana] = useState(4);
   const [whiteCaptured, setWhiteCaptured] = useState<string[]>([]);
   const [blackCaptured, setBlackCaptured] = useState<string[]>([]);
   const [activeSpell, setActiveSpell] = useState<string | null>(null);
+
+  // Elemental Spells Cast Counter (tracked for active match)
+  const [spellsCastCount, setSpellsCastCount] = useState<{
+    fire: number;
+    ice: number;
+    earth: number;
+    wind: number;
+  }>({ fire: 0, ice: 0, earth: 0, wind: 0 });
 
   // Board State
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
@@ -131,6 +147,38 @@ export const ChessBoard: React.FC = () => {
     }, 3500);
   };
 
+  const recordMatchResult = useCallback(
+    (result: 'white' | 'black' | 'draw', currentMoveHistory?: MoveHistoryItem[]) => {
+      if (hasSavedMatchRef.current) return;
+      hasSavedMatchRef.current = true;
+
+      const endedAtDate = new Date();
+      const startedAtDate = gameStartTimeRef.current;
+      const durationSeconds = Math.max(
+        1,
+        Math.floor((endedAtDate.getTime() - startedAtDate.getTime()) / 1000)
+      );
+
+      const historyToSave = currentMoveHistory || moveHistory;
+      const whitePlayerId = user?.id || null;
+      const blackPlayerId = null; // Bot or local opponent
+
+      saveCompletedMatch({
+        userId: user?.id || null,
+        gameMode,
+        result,
+        whitePlayerId,
+        blackPlayerId,
+        moves: historyToSave,
+        startedAt: startedAtDate.toISOString(),
+        endedAt: endedAtDate.toISOString(),
+        durationSeconds,
+        spellsCast: spellsCastCount,
+      });
+    },
+    [user, gameMode, moveHistory, spellsCastCount]
+  );
+
   const handleResetGame = useCallback(() => {
     setGame(new Chess());
     setBoardTileMap(generateSymmetricTiles());
@@ -145,8 +193,11 @@ export const ChessBoard: React.FC = () => {
     setWhiteCaptured([]);
     setBlackCaptured([]);
     setActiveSpell(null);
+    setSpellsCastCount({ fire: 0, ice: 0, earth: 0, wind: 0 });
     setIsGameOver(false);
     setGameOverText('');
+    gameStartTimeRef.current = new Date();
+    hasSavedMatchRef.current = false;
   }, []);
 
   // Material calculations
@@ -247,6 +298,12 @@ export const ChessBoard: React.FC = () => {
     nextTiles[square] = { square, element, duration: dur };
     setBoardTileMap(nextTiles);
 
+    // Track successfully cast spell for active player
+    setSpellsCastCount((prev) => ({
+      ...prev,
+      [element]: prev[element] + 1,
+    }));
+
     triggerBanner(`✨ Cast ${spellName} on ${square}!`);
 
     // Log move chronicle
@@ -321,15 +378,15 @@ export const ChessBoard: React.FC = () => {
     const targetTileElem = boardTileMap[targetSquare]?.element;
     const elemTag = targetTileElem !== 'none' ? targetTileElem : undefined;
 
-    setMoveHistory((prev) => [
-      {
-        san: result.san,
-        color: turn,
-        elementTrigger: elemTag,
-        moveNumber: Math.floor(prev.length / 2) + 1,
-      },
-      ...prev,
-    ]);
+    const newMoveItem: MoveHistoryItem = {
+      san: result.san,
+      color: turn,
+      elementTrigger: elemTag,
+      moveNumber: Math.floor(moveHistory.length / 2) + 1,
+    };
+
+    const updatedMoveHistory = [newMoveItem, ...moveHistory];
+    setMoveHistory(updatedMoveHistory);
 
     // Step C: Process End of Turn
     const endTurnResult = processEndOfTurn(
@@ -364,13 +421,18 @@ export const ChessBoard: React.FC = () => {
 
     if (game.isGameOver()) {
       setIsGameOver(true);
+      let matchResult: 'white' | 'black' | 'draw' = 'draw';
       if (game.isCheckmate()) {
+        matchResult = turn === 'w' ? 'white' : 'black';
         setGameOverText(`Checkmate! ${turn === 'w' ? 'White' : 'Black'} wins!`);
       } else if (game.isDraw()) {
+        matchResult = 'draw';
         setGameOverText('Game ended in a draw!');
       } else {
+        matchResult = 'draw';
         setGameOverText('Game Over!');
       }
+      recordMatchResult(matchResult, updatedMoveHistory);
     }
   };
 
@@ -547,7 +609,9 @@ export const ChessBoard: React.FC = () => {
             onFlipBoard={() => setIsFlipped(!isFlipped)}
             onResign={() => {
               setIsGameOver(true);
+              const winnerResult: 'white' | 'black' = turn === 'w' ? 'black' : 'white';
               setGameOverText(`${turn === 'w' ? 'White' : 'Black'} resigned the match.`);
+              recordMatchResult(winnerResult);
             }}
           />
         </div>

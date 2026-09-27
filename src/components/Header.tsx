@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+import { UserMenu } from './UserMenu';
+
 export interface HeaderProps {
   isMuted?: boolean;
   onToggleMute?: () => void;
@@ -79,7 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* RIGHT CONTROLS & SETTINGS */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <button
             onClick={() => setShowRules(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-bold text-slate-300 transition-all shadow-sm"
@@ -102,15 +104,8 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          <a
-            href="https://chess-online-nine.vercel.app/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-xs font-bold shadow-md transition-all"
-          >
-            <span>Live App</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+          {/* USER ACCOUNT MENU */}
+          <UserMenu />
         </div>
       </header>
 
